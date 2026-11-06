@@ -1,9 +1,11 @@
 {
   "name": "pi-webhook",
   "version": "0.1.0",
+  "license": "MIT",
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
   "description": "Configurable, privacy-first webhook notifications for Pi and pi-web",
   "type": "module",
-  "repository": { "type": "git", "url": "https://github.com/YHQY-Dev/pi-webhook.git" },
+  "repository": { "type": "git", "url": "git+https://github.com/YHQY-Dev/pi-webhook.git" },
   "homepage": "https://github.com/YHQY-Dev/pi-webhook#readme",
   "bugs": { "url": "https://github.com/YHQY-Dev/pi-webhook/issues" },
   "keywords": [
@@ -35,6 +37,7 @@
   },
   "scripts": {
     "test": "node --test test/*.test.ts",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "prepublishOnly": "npm run check && npm test"
   }
 }

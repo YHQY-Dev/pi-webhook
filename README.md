@@ -127,3 +127,7 @@ npm pack --dry-run
 ```
 
 职责划分：`src/config.ts` 配置/校验/存储；`src/delivery.ts` 协议、隐私裁剪、HTTP 和有界队列；`src/index.ts` Pi 生命周期和命令桥接。宿主 SDK 仅作为 peer/dev 依赖，不打包为运行时副本。
+
+## 许可证
+
+[MIT](LICENSE) © 2026 YHQY-Dev
