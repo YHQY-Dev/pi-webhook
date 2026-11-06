@@ -7,12 +7,12 @@
 需要 Node.js >= 22.18，Pi 提供 `agent_settled`、`agent_before_settle`、`ui_prompt_start/end` 事件（已使用 Pi 1.5.0 类型和生命周期验证）。
 
 ```bash
-pi install git:github.com/YHQY-Dev/pi-webhook
+pi install npm:pi-webhook
 ```
 
 在已有会话执行 `/reload`，或重启会话。使用同一个 Pi agent 配置目录的 Pi CLI 和 pi-web 共用安装与配置。若 pi-web 使用另一用户或 `PI_CODING_AGENT_DIR`，需在对应环境安装；远程 pi-web 的 localhost 指向服务器，不是浏览器所在电脑。
 
-使用 `pi remove git:github.com/YHQY-Dev/pi-webhook` 可移除安装，通知配置需按需自行删除。尚未发布 npm 包。开发时也可使用 `pi install /absolute/path/to/pi-webhook` 安装本地目录，安装后不要移动或删除该目录。
+使用 `pi remove npm:pi-webhook` 可移除安装，通知配置需按需自行删除。也可通过 `pi install git:github.com/YHQY-Dev/pi-webhook` 安装 GitHub 版本（不要同时安装两份）。开发时可使用 `pi install /absolute/path/to/pi-webhook` 安装本地目录，安装后不要移动或删除该目录。
 
 **默认目标 `http://127.0.0.1:24527/` 是接收端地址，不是扩展监听端口。** 缺少配置文件时使用内置默认配置并开始发送；接收端没启动会有限重试，失败仅计数，不弹窗、不阻塞 Agent。接收端需实现下文定义的通用 JSON 协议。
 
@@ -22,7 +22,7 @@ pi install git:github.com/YHQY-Dev/pi-webhook
 
 | 命令 | 作用 |
 | --- | --- |
-| `/webhook` 或 `/webhook status` | 显示启用状态、订阅、失败/丢弃计数及配置路径，不显示 URL 或鉴权信息 |
+| `/webhook` 或 `/webhook status` | 显示启用状态、订阅、成功/失败/待发/丢弃/过期计数及配置路径，不显示 URL 或鉴权信息 |
 | `/webhook config` | 编辑完整 JSON；保存前校验，取消不保存 |
 | `/webhook on` / `/webhook off` | 持久化启用/禁用 |
 | `/webhook events default completed,error,waiting` | 设置指定接收端的事件列表 |
@@ -97,25 +97,34 @@ X-Pi-Event-Type: completed
   "type": "completed",
   "timestamp": "2026-11-06T00:00:00.000Z",
   "source": "pi",
-  "session": { "id": "pi-session-id" },
+  "session": {
+    "id": "pi-session-id",
+    "name": "修复登录问题",
+    "navigation": { "kind": "web", "url": "http://127.0.0.1:30141/?session=pi-session-id" }
+  },
   "data": { "runId": "a-run-uuid", "durationMs": 1234 }
 }
 ```
 
 - `session.id` 区分同一个 pi-web 进程下的多会话；不要用 PID 识别会话。
+- `session.name` 是发送时读取的 Pi 会话名称，未命名时省略。名称属于默认发送的会话元数据；若名称包含敏感信息，也会传给启用的接收端。自动生成的标题可能晚于完成事件，首次通知不保证有名称。
+- `session.navigation` 提供尽力跳转信息：扩展启动或 `/webhook reload` 时读取 `<agentDir>/pi-web-run/*.json`，只有 `nextPid` 与当前进程匹配才使用该实例 URL，构造 `?session=<id>` 会话链接；不修改 pi-web。未匹配（含记录缺失/损坏/自定义启动）时按终端尝试，发送 `{ "kind": "terminal", "pid": 1234 }`。PID 指向 Pi 进程，仅供同机接收端捕获父进程链，不代表有可聚焦窗口，更不能精准选择终端标签页。
+- 网页跳转地址为服务器本机运行记录里的地址，不保证适用于远程接收端、反向代理或自定义部署；浏览器打开链接也不保证复用已有标签页。元数据不包含登录凭据。
 - 运行相关事件包含 `data.runId`，方便关联 started / waiting / completed；非运行中事件可不包含。
 - completed / error / cancelled 包含 `durationMs`；waiting 包含 `reason: "ui_prompt"`、`kind`；tool_error 包含 `toolName`、`toolCallId`。
 - `includeCwd: true` 时额外发送 `session.cwd`；`includeMessage: true` 时最终运行通知可附带 `data.message`，内容为最后一条助手回复的纯文本（最多 2000 字符）。不保证错误时有回复正文。
-- 默认不发送提示词、回复正文、思考、工具参数/结果、错误堆栈、会话文件路径、UI 标题。开启正文或目录后可能泄露敏感信息，请谨慎配置。
+- 默认不发送提示词、回复正文、思考、工具参数/结果、错误堆栈、会话文件路径、阻塞交互框标题（会话名称与跳转元数据除外）。开启正文或目录后可能泄露敏感信息，请谨慎配置。
 - 自定义头不能覆盖 Content-Type、Host、Content-Length、Connection、Transfer-Encoding 或 `X-Pi-*`。
 
 这是通用 JSON 协议，不自动转换 Discord / Slack 等专用消息格式；需要相应适配服务。
 
 ## 可靠性边界
 
-每个会话对每个目标维护独立顺序队列（最多 100 个含正在发送的事件，超量丢弃新事件）。不同目标并行；Agent 事件处理只入队，不等待网络。网络错误、429、5xx 有限指数退避重试，其他非 2xx 不重试。超时按每次请求计算。
+每个会话对每个目标维护独立顺序队列（最多 100 个含正在发送的事件，超量丢弃新事件）。不同目标并行；包括配置重载后尚未排空的旧目标，最多同时保留 16 个目标队列。空队列自动释放。Agent 事件处理只入队，不等待网络；只有启用正文且订阅最终运行通知时才读取回复，并最多复制 2000 字符。
 
-同一个事件的重试保持相同 ID，接收端应按 `id` 去重；由于超时可能发生在接收成功后，可能重复送达。配置保存在事件入队时的快照中。此扩展是内存中的尽力通知，不保证进程崩溃、强制结束、系统休眠期间的送达，不持久化消息；正常关闭最多等待 2 秒再取消剩余请求。失败和丢弃计数可通过 status 查看，不记录响应正文或凭据。
+网络错误、429、5xx 有限指数退避重试，其他非 2xx 不重试。超时按每次请求计算；事件从入队开始最多存活 30 秒（包含等待、请求和重试），过期队列事件直接丢弃，正在发送的请求也会取消。接收端慢或离线时可能丢通知，而不是无限积压旧状态。原生 Node HTTP(S) 复用 keep-alive 连接，不跟随重定向；响应正文不保存，最多消费 64 KiB 后关闭连接，慢响应体仍受请求超时约束。
+
+同一个事件的重试保持相同 ID，接收端应按 `id` 去重；由于超时可能发生在接收成功后，可能重复送达。配置保存在事件入队时的快照中。此扩展是内存中的尽力通知，不保证进程崩溃、强制结束、系统休眠期间的送达，不持久化消息；正常关闭最多等待 2 秒再取消剩余请求。status 的成功/失败按目标事件计数，不是 HTTP 尝试次数；丢弃包含超量、过期和关闭时未开始发送的事件，过期是其中的子集。已开始但超时或被取消的发送计入失败。不记录响应正文或凭据。
 
 ## 开发
 
@@ -123,10 +132,13 @@ X-Pi-Event-Type: completed
 npm ci
 npm run check
 npm test
+npm run bench -- --long
 npm pack --dry-run
 ```
 
-职责划分：`src/config.ts` 配置/校验/存储；`src/delivery.ts` 协议、隐私裁剪、HTTP 和有界队列；`src/index.ts` Pi 生命周期和命令桥接。宿主 SDK 仅作为 peer/dev 依赖，不打包为运行时副本。
+压测脚本仅启动随机端口的临时接收端，不读取实际通知配置；`--long` 增加 30 秒过期/离线积压场景。[性能报告](bench/README.md) 记录基线、优化数据和适用边界。报告是当前工作区结果，不表示所有优化已发布到 npm。
+
+职责划分：`src/config.ts` 配置/校验/存储；`src/http.ts` 原生 HTTP(S) 与有界响应消费；`src/delivery.ts` 协议、隐私裁剪、重试和有界队列；`src/navigation.ts` 运行实例识别和会话跳转元数据；`src/index.ts` Pi 生命周期和命令桥接。宿主 SDK 仅作为 peer/dev 依赖，不打包为运行时副本。
 
 ## 许可证
 
