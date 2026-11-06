@@ -1,6 +1,6 @@
 # Pi Webhook
 
-独立、通用的 Pi / pi-web 通知扩展。无需 Catrace；接收端实现 HTTP JSON POST 即可。没有运行时第三方依赖，不启动 HTTP 服务，不提供远程执行或审批能力。
+独立、通用的 Pi / pi-web 通知扩展，接收端实现 HTTP JSON POST 即可。没有运行时第三方依赖，不启动 HTTP 服务，不提供远程执行或审批能力。
 
 ## 安装
 
@@ -14,7 +14,7 @@ pi install git:github.com/YHQY-Dev/pi-webhook
 
 使用 `pi remove git:github.com/YHQY-Dev/pi-webhook` 可移除安装，通知配置需按需自行删除。尚未发布 npm 包。开发时也可使用 `pi install /absolute/path/to/pi-webhook` 安装本地目录，安装后不要移动或删除该目录。
 
-**默认目标 `http://127.0.0.1:24527/` 是接收端地址，不是扩展监听端口。** 缺少配置文件时使用内置默认配置并开始发送；接收端没启动会有限重试，失败仅计数，不弹窗、不阻塞 Agent。Catrace 的接收适配尚未实现，现有 agent-notify 不能直接使用此协议。
+**默认目标 `http://127.0.0.1:24527/` 是接收端地址，不是扩展监听端口。** 缺少配置文件时使用内置默认配置并开始发送；接收端没启动会有限重试，失败仅计数，不弹窗、不阻塞 Agent。接收端需实现下文定义的通用 JSON 协议。
 
 ## 配置和命令
 
