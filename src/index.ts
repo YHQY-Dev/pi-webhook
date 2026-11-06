@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { defaultConfig, loadConfig, saveConfig, parseConfig, EVENTS, type Config, type EventType } from "./config.ts";
 import { Dispatcher, deliver, type WebhookEvent } from "./delivery.ts";
+import { detectNavigationHost, sessionNavigation, type NavigationHost } from "./navigation.ts";
 
 export default function webhookExtension(pi: ExtensionAPI) {
   const path = join(getAgentDir(), "webhook.json");
@@ -15,6 +16,7 @@ export default function webhookExtension(pi: ExtensionAPI) {
   let configuring = false;
   let waiting = 0;
   let wantsMessage = false;
+  let navigationHost: NavigationHost = { kind: "terminal", pid: process.pid };
   const applyConfig = (next: Config) => {
     config = next;
     wantsMessage = next.enabled && next.webhooks.some(t => t.enabled && t.includeMessage && t.events.some(type => type === "completed" || type === "error" || type === "cancelled"));
@@ -22,12 +24,13 @@ export default function webhookExtension(pi: ExtensionAPI) {
   };
   const makeEvent = (type: EventType | "test", ctx: ExtensionContext, data: Record<string, unknown> = {}): WebhookEvent => ({
     schemaVersion: 1, id: randomUUID(), type, timestamp: new Date().toISOString(), source: "pi",
-    session: { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, data: { ...(runId ? { runId } : {}), ...data },
+    session: { id: ctx.sessionManager.getSessionId(), name: ctx.sessionManager.getSessionName(), cwd: ctx.cwd, navigation: sessionNavigation(navigationHost, ctx.sessionManager.getSessionId()) }, data: { ...(runId ? { runId } : {}), ...data },
   });
   const emit = (type: EventType, ctx: ExtensionContext, data: Record<string, unknown> = {}) => {
     if (config.enabled && config.webhooks.some(t => t.enabled && t.events.includes(type))) dispatcher.enqueue(makeEvent(type, ctx, data), config);
   };
   async function reload(ctx: ExtensionContext) {
+    navigationHost = await detectNavigationHost(getAgentDir());
     try { applyConfig(await loadConfig(path)); }
     catch {
       applyConfig({ ...defaultConfig(), enabled: false });

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
@@ -25,12 +25,14 @@ test("extension lifecycle: no low-level false completion, waiting, recovery, can
     const config = defaultConfig(); config.webhooks[0].url = `http://127.0.0.1:${address.port}/`;
     config.webhooks[0].events = [...EVENTS];
     await saveConfig(join(dir, "webhook.json"), config);
+    await mkdir(join(dir, "pi-web-run"));
+    await writeFile(join(dir, "pi-web-run", "1.json"), JSON.stringify({ nextPid: process.pid, url: "http://127.0.0.1:30141/" }));
     type Handler = (event: Record<string, unknown>, ctx: ExtensionContext) => unknown;
     const handlers = new Map<string, Handler>();
     let command: ((args: string, ctx: ExtensionContext) => Promise<void>) | undefined;
     const pi = { on: (type: string, handler: Handler) => handlers.set(type, handler), registerCommand: (_: string, spec: { handler: typeof command }) => { command = spec.handler; } } as unknown as ExtensionAPI;
     const notices: string[] = [];
-    const ctx = { cwd: "private-project", hasUI: true, sessionManager: { getSessionId: () => "session-A" }, ui: { notify: (text: string) => notices.push(text), editor: async () => { await handlers.get("ui_prompt_start")?.({ kind: "editor", reason: "ui_prompt" }, ctx); await handlers.get("ui_prompt_end")?.({}, ctx); return undefined; } } } as unknown as ExtensionContext;
+    const ctx = { cwd: "private-project", hasUI: true, sessionManager: { getSessionId: () => "session-A", getSessionName: () => "修复登录问题" }, ui: { notify: (text: string) => notices.push(text), editor: async () => { await handlers.get("ui_prompt_start")?.({ kind: "editor", reason: "ui_prompt" }, ctx); await handlers.get("ui_prompt_end")?.({}, ctx); return undefined; } } } as unknown as ExtensionContext;
     extension(pi);
     const fire = async (type: string, event: Record<string, unknown> = {}) => { await handlers.get(type)?.(event, ctx); };
     await fire("session_start");
@@ -53,6 +55,8 @@ test("extension lifecycle: no low-level false completion, waiting, recovery, can
     await fire("session_shutdown");
     assert.deepEqual(received.map(e => e.type), ["session_started", "started", "waiting", "resumed", "completed", "started", "error", "started", "cancelled"]);
     assert(received.every(e => e.session.id === "session-A" && !e.session.cwd && !e.data.message));
+    assert(received.every(e => e.session.name === "修复登录问题"));
+    assert.deepEqual(received[4].session.navigation, { kind: "web", url: "http://127.0.0.1:30141/?session=session-A" });
     assert.equal(received[1].data.runId, received[4].data.runId);
     assert.notEqual(received[4].data.runId, received[6].data.runId);
   } finally {
@@ -77,7 +81,7 @@ test("summary is opt-in, bounded across text blocks, and updated on config reloa
   const handlers = new Map<string, Handler>();
   let command: ((args: string, ctx: ExtensionContext) => Promise<void>) | undefined;
   const pi = { on: (type: string, handler: Handler) => handlers.set(type, handler), registerCommand: (_: string, spec: { handler: typeof command }) => { command = spec.handler; } } as unknown as ExtensionAPI;
-  const ctx = { cwd: dir, hasUI: false, sessionManager: { getSessionId: () => "summary" } } as unknown as ExtensionContext;
+  const ctx = { cwd: dir, hasUI: false, sessionManager: { getSessionId: () => "summary", getSessionName: () => undefined } } as unknown as ExtensionContext;
   const fire = async (type: string, event: Record<string, unknown> = {}) => { await handlers.get(type)?.(event, ctx); };
   const noRead = { role: "assistant", get content() { throw new Error("private content must not be traversed"); } };
   try {

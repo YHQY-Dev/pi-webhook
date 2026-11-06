@@ -9,7 +9,7 @@ export interface WebhookEvent {
   type: EventType | "test";
   timestamp: string;
   source: "pi";
-  session: { id: string; name?: string; cwd?: string };
+  session: { id: string; name?: string; cwd?: string; navigation?: import("./navigation.ts").SessionNavigation };
   data: Record<string, unknown>;
 }
 export function payloadFor(event: WebhookEvent, target: Target): WebhookEvent {
