@@ -1,0 +1,40 @@
+{
+  "name": "pi-webhook",
+  "version": "0.1.0",
+  "description": "Configurable, privacy-first webhook notifications for Pi and pi-web",
+  "type": "module",
+  "repository": { "type": "git", "url": "https://github.com/YHQY-Dev/pi-webhook.git" },
+  "homepage": "https://github.com/YHQY-Dev/pi-webhook#readme",
+  "bugs": { "url": "https://github.com/YHQY-Dev/pi-webhook/issues" },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "webhook",
+    "notifications"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "config.example.json"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.5.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "check": "tsc --noEmit"
+  }
+}
