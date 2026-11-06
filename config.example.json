@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "timeoutMs": 3000,
+  "retries": 2,
+  "webhooks": [
+    {
+      "name": "default",
+      "url": "http://127.0.0.1:24527/",
+      "enabled": true,
+      "events": ["completed", "error", "waiting"],
+      "headers": {},
+      "includeMessage": false,
+      "includeCwd": false
+    }
+  ]
+}
