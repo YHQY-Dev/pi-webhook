@@ -14,15 +14,23 @@ export default function webhookExtension(pi: ExtensionAPI) {
   let startedAt = 0;
   let configuring = false;
   let waiting = 0;
+  let wantsMessage = false;
+  const applyConfig = (next: Config) => {
+    config = next;
+    wantsMessage = next.enabled && next.webhooks.some(t => t.enabled && t.includeMessage && t.events.some(type => type === "completed" || type === "error" || type === "cancelled"));
+    if (!wantsMessage) message = undefined;
+  };
   const makeEvent = (type: EventType | "test", ctx: ExtensionContext, data: Record<string, unknown> = {}): WebhookEvent => ({
     schemaVersion: 1, id: randomUUID(), type, timestamp: new Date().toISOString(), source: "pi",
     session: { id: ctx.sessionManager.getSessionId(), cwd: ctx.cwd }, data: { ...(runId ? { runId } : {}), ...data },
   });
-  const emit = (type: EventType, ctx: ExtensionContext, data: Record<string, unknown> = {}) => dispatcher.enqueue(makeEvent(type, ctx, data), config);
+  const emit = (type: EventType, ctx: ExtensionContext, data: Record<string, unknown> = {}) => {
+    if (config.enabled && config.webhooks.some(t => t.enabled && t.events.includes(type))) dispatcher.enqueue(makeEvent(type, ctx, data), config);
+  };
   async function reload(ctx: ExtensionContext) {
-    try { config = await loadConfig(path); }
+    try { applyConfig(await loadConfig(path)); }
     catch {
-      config = { ...defaultConfig(), enabled: false };
+      applyConfig({ ...defaultConfig(), enabled: false });
       if (ctx.hasUI) ctx.ui.notify(`Webhook 配置无效，已停止发送。请检查 ${path}`, "error");
     }
   }
@@ -37,7 +45,18 @@ export default function webhookExtension(pi: ExtensionAPI) {
   });
   pi.on("message_end", event => {
     if (event.message.role !== "assistant") return;
-    message = event.message.content.filter(block => block.type === "text").map(block => block.text).join("\n").slice(0, 2000);
+    if (!wantsMessage) { message = undefined; return; }
+    // Copy at most 2000 characters rather than joining an arbitrarily large reply.
+    let summary = "";
+    let first = true;
+    for (const block of event.message.content) {
+      if (block.type !== "text") continue;
+      if (!first) summary += "\n";
+      summary += block.text.slice(0, Math.max(0, 2000 - summary.length));
+      first = false;
+      if (summary.length >= 2000) break;
+    }
+    message = summary;
   });
   pi.on("agent_before_settle", event => { outcome = event.outcome; });
   pi.on("agent_settled", (event, ctx) => {
@@ -66,7 +85,7 @@ export default function webhookExtension(pi: ExtensionAPI) {
       const notify = (text: string, error = false) => { if (ctx.hasUI) ctx.ui.notify(text, error ? "error" : "info"); };
       try {
         if (command === "status") {
-          notify(`${config.enabled ? "已启用" : "已禁用"} · ${path}\n${config.webhooks.map(t => `${t.name}: ${t.enabled ? t.events.join(", ") : "禁用"}`).join("\n")}\n发送失败 ${dispatcher.failed}，队列丢弃 ${dispatcher.dropped}`);
+          notify(`${config.enabled ? "已启用" : "已禁用"} · ${path}\n${config.webhooks.map(t => `${t.name}: ${t.enabled ? t.events.join(", ") : "禁用"}`).join("\n")}\n发送成功 ${dispatcher.delivered}，失败 ${dispatcher.failed}，待发 ${dispatcher.pending}，丢弃 ${dispatcher.dropped}（过期 ${dispatcher.expired}）`);
         } else if (command === "reload") {
           await reload(ctx);
           notify(config.enabled ? "Webhook 配置已加载" : "Webhook 当前已禁用");
@@ -98,7 +117,7 @@ export default function webhookExtension(pi: ExtensionAPI) {
           }
           next = parseConfig(next);
           await saveConfig(path, next);
-          config = next;
+          applyConfig(next);
           notify("Webhook 配置已保存（其他会话需执行 /webhook reload）");
         }
       } catch { notify("操作失败：请检查配置、接收端名称、事件名称或网络连接；未保存无效配置。", true); }
